@@ -56,19 +56,20 @@ namespace MapleStoryPacketAnalyzer
         {
             bool isSendToClient = false;
             string[] sData = packetInfo.Split(new char[] { ',' });
-
+            List<byte[]> data = new List<byte[]>();
+            byte[] useIv = new byte[4];
             ListViewItem lvi = new ListViewItem((listView1.Items.Count + 1).ToString());
+
             foreach (string s in sData)
             {
-                lvi.SubItems.Add(s);
                 if (s.Contains("ToClient"))
                 {
                     isSendToClient = true;
                     lvi.BackColor = Color.FromArgb(229, 235, 224);
                 }
-            }
-            List<byte[]> data = new List<byte[]>();
+                    lvi.SubItems.Add(s);
 
+            }
             if (PayLoadData[0] != 0x0F)
             {
                 byte[] decryptData = new byte[PayLoadData.Length - 4];
@@ -76,28 +77,31 @@ namespace MapleStoryPacketAnalyzer
                 Buffer.BlockCopy(PayLoadData, 4, decryptData, 0, PayLoadData.Length - 4);
 
                 byte[] tempData;
-                byte[] useIv;
                 if (isSendToClient)
                 {
                     useIv = s_send.getIv();
                     tempData = s_send.crypt(decryptData);
-                    
+
+                    if (tempData[0] == 0x69)//如果是验证账号密码的封包 接受的时候需要再换一次iv才能正确解包
+                        s_recv.updateIv();
                 }
                 else
                 {
                     useIv = s_recv.getIv();
                     tempData = s_recv.crypt(decryptData);
-                    
+
                 }
 
                 data.Add(PayLoadData);
                 data.Add(tempData);
-                data.Add(useIv);
             }
             else
             {
                 data.Add(PayLoadData);
             }
+
+            lvi.SubItems[5].Text = BitTools.GetHexString(useIv);
+
             lvi.Tag = data;
             listView1.Items.Add(lvi);
         }
@@ -212,16 +216,16 @@ namespace MapleStoryPacketAnalyzer
                                 time,
                                 packetSource,
                                 payLoadData.Length,
-                                "UnKnown",
-                                "UnKnown"
+                                "Header",
+                                "IV"
                             );
                             this.BeginInvoke(addItems, itemData, payLoadData);
                             if (payLoadData.Length == 17 && payLoadData[0] == 0x0F)
                             {
                                 byte[] recvIv = new byte[4];
-                                Array.Copy(payLoadData, 7, recvIv, 0, 4);   
+                                Array.Copy(payLoadData, 7, recvIv, 0, 4);
                                 byte[] sendIv = new byte[4];
-                                Array.Copy(payLoadData, 11, sendIv, 0, 4);                                                     
+                                Array.Copy(payLoadData, 11, sendIv, 0, 4);
                                 s_send = new MapleAES(sendIv, payLoadData[2]);
                                 s_recv = new MapleAES(recvIv, (ushort)(0xFFFF - payLoadData[2]));
                                 this.BeginInvoke(updateVersion, payLoadData[2], recvIv, sendIv);
@@ -279,13 +283,12 @@ namespace MapleStoryPacketAnalyzer
                 ListView.SelectedIndexCollection c = listView1.SelectedIndices;
                 ListViewItem selectItem = listView1.Items[c[0]];
                 List<byte[]> data = (List<byte[]>)selectItem.Tag;
-                if (data.Count == 3)
+                if (data.Count == 2)
                 {
-                    richTextBox1.Text = string.Format("[原始数据 长度:{0}]\n{1} \n[解密数据 长度:{2}]\n{3} \n[Ascii]\n{4} \n[IV:{5}]",
+                    richTextBox1.Text = string.Format("[原始数据 长度:{0}]\n{1} \n[解密数据 长度:{2}]\n{3} \n[Ascii]\n{4}",
                      data[0].Length, BitTools.GetHexString(data[0]),
                      data[1].Length, BitTools.GetHexString(data[1]),
-                     Encoding.ASCII.GetString(data[1]),
-                     BitTools.GetHexString(data[2]));
+                     Encoding.ASCII.GetString(data[1]));
                 }
                 else
                 {
@@ -371,6 +374,11 @@ namespace MapleStoryPacketAnalyzer
                     c[i] = 0x00;
             }
             textBox6.Text = BitTools.GetHexStringWithTrim(c);
+        }
+
+        private void textBox7_TextChanged(object sender, EventArgs e)
+        {
+            textBox8.Text = "0x" + textBox7.Text.Replace(" ", ",0x");
         }
     }
 }
