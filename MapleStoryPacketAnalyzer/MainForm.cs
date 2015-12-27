@@ -41,10 +41,10 @@ namespace MapleStoryPacketAnalyzer
         public byte[] sendIv = new byte[4];
         public byte[] recvIv = new byte[4];
         public ushort mapleVersion;
-        MapleAES s_send;//server send
-        MapleAES s_recv;//server recv
+        MapleAES clientSend;//server send
+        MapleAES clientRecv;//server recv
 
-        public void updateVersionMethod(byte version, byte[] recvIv, byte[] sendIv)
+        public void updateVersionMethod(byte version, byte[] sendIv,byte[] recvIv)
         {
             toolLb_GameVersion.Text = "游戏版本:V" + version.ToString();
             this.mapleVersion = version;
@@ -52,9 +52,11 @@ namespace MapleStoryPacketAnalyzer
             this.recvIv = recvIv;
         }
 
+        bool needUpdateIv = false;
+
         public void addItemsMethod(string packetInfo, byte[] PayLoadData)
         {
-            bool isSendToClient = false;
+            bool isToClient = false;
             string[] sData = packetInfo.Split(new char[] { ',' });
             List<byte[]> data = new List<byte[]>();
             byte[] useIv = new byte[4];
@@ -64,7 +66,7 @@ namespace MapleStoryPacketAnalyzer
             {
                 if (s.Contains("ToClient"))
                 {
-                    isSendToClient = true;
+                    isToClient = true;
                     lvi.BackColor = Color.FromArgb(229, 235, 224);
                 }
                     lvi.SubItems.Add(s);
@@ -77,19 +79,23 @@ namespace MapleStoryPacketAnalyzer
                 Buffer.BlockCopy(PayLoadData, 4, decryptData, 0, PayLoadData.Length - 4);
 
                 byte[] tempData;
-                if (isSendToClient)
+                if (isToClient)
                 {
-                    useIv = s_send.getIv();
-                    tempData = s_send.crypt(decryptData);
 
-                    if (tempData[0] == 0x69)//如果是验证账号密码的封包 接受的时候需要再换一次iv才能正确解包
-                        s_recv.updateIv();
+                    useIv = clientRecv.getIv();
+                    tempData = clientRecv.crypt(decryptData);
+                    Console.WriteLine(BitTools.GetHexString(tempData));
+                    if (tempData[0] == 0x6D)//如果是验证账号密码的封包 接受的时候需要再换一次iv才能正确解包
+                    {
+                        clientRecv.updateIv();
+                        needUpdateIv = true;
+                    }
+                        
                 }
                 else
                 {
-                    useIv = s_recv.getIv();
-                    tempData = s_recv.crypt(decryptData);
-
+                    useIv = clientSend.getIv();
+                    tempData = clientSend.crypt(decryptData);
                 }
 
                 data.Add(PayLoadData);
@@ -222,13 +228,13 @@ namespace MapleStoryPacketAnalyzer
                             this.BeginInvoke(addItems, itemData, payLoadData);
                             if (payLoadData.Length == 17 && payLoadData[0] == 0x0F)
                             {
-                                byte[] recvIv = new byte[4];
-                                Array.Copy(payLoadData, 7, recvIv, 0, 4);
-                                byte[] sendIv = new byte[4];
-                                Array.Copy(payLoadData, 11, sendIv, 0, 4);
-                                s_send = new MapleAES(sendIv, payLoadData[2]);
-                                s_recv = new MapleAES(recvIv, (ushort)(0xFFFF - payLoadData[2]));
-                                this.BeginInvoke(updateVersion, payLoadData[2], recvIv, sendIv);
+                                byte[] SIV = new byte[4];
+                                Array.Copy(payLoadData, 7, SIV, 0, 4);
+                                byte[] RIV= new byte[4];
+                                Array.Copy(payLoadData, 11, RIV, 0, 4);                      
+                                clientRecv = new MapleAES(RIV, payLoadData[2]);
+                                clientSend = new MapleAES(SIV, (ushort)(0xFFFF - payLoadData[2]));
+                                this.BeginInvoke(updateVersion, payLoadData[2], SIV, RIV);
                             }
                         }
                     }
